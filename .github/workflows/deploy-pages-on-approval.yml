@@ -1,8 +1,8 @@
-name: Deploy approved pull request to GitHub Pages
+name: Deploy main to GitHub Pages
 
 on:
-  pull_request_review:
-    types: [submitted]
+  push:
+    branches: [main]
 
 permissions:
   contents: read
@@ -15,16 +15,13 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.event.review.state == 'approved'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Check out the approved revision
+      - name: Check out main
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
