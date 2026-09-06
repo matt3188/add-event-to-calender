@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f172a" />
+    <title>Add Apple Event to Calendar</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main id="app" class="page-shell" v-cloak>
+      <section class="event-card" aria-labelledby="event-title">
+        <p class="eyebrow">Apple Event</p>
+        <h1 id="event-title">{{ event.title }}</h1>
+        <p class="event-meta">{{ event.displayDate }}</p>
+        <p class="event-description">{{ event.description }}</p>
+        <button class="calendar-button" type="button" @click="downloadCalendarEvent">Add to Calendar</button>
+        <p class="hint">Creates an .ics calendar file on your device.</p>
+      </section>
+    </main>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
