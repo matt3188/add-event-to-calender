@@ -23,7 +23,8 @@
   </main>
 
   <script>
-    const event = {
+    // Change only these values when updating the event.
+    const eventConfig = {
       title: "POC Calendar Event",
       start: "20260907T180000",
       end: "20260907T190000",
@@ -48,11 +49,11 @@
       "BEGIN:VEVENT",
       `UID:${Date.now()}@add-event-to-calender`,
       `DTSTAMP:${makeUtcTimestamp()}`,
-      `DTSTART;TZID=Europe/London:${event.start}`,
-      `DTEND;TZID=Europe/London:${event.end}`,
-      `SUMMARY:${escapeIcsText(event.title)}`,
-      `LOCATION:${escapeIcsText(event.location)}`,
-      `DESCRIPTION:${escapeIcsText(event.description)}`,
+      `DTSTART;TZID=Europe/London:${eventConfig.start}`,
+      `DTEND;TZID=Europe/London:${eventConfig.end}`,
+      `SUMMARY:${escapeIcsText(eventConfig.title)}`,
+      `LOCATION:${escapeIcsText(eventConfig.location)}`,
+      `DESCRIPTION:${escapeIcsText(eventConfig.description)}`,
       "END:VEVENT",
       "END:VCALENDAR"
     ].join("\r\n");
@@ -69,7 +70,7 @@
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     });
 
-    document.getElementById("event-details").textContent = event.title;
+    document.getElementById("event-details").textContent = eventConfig.title;
   </script>
 </body>
 </html>
