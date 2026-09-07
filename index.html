@@ -9,10 +9,12 @@
     body { margin:0; min-height:100svh; display:grid; place-items:center; padding:24px 20px; background:#f5f5f7; color:#111; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
     main { width:min(100%,520px); text-align:center; }
     h1 { margin:0 0 12px; font-size:clamp(2rem,8vw,3.5rem); line-height:1; }
-    p { margin:0 0 20px; color:#666; }
-    button { width:100%; border:0; border-radius:28px; padding:22px; font:inherit; font-size:clamp(1.35rem,6vw,2.2rem); font-weight:800; cursor:pointer; }
-    #speak-event { min-height:120px; background:#111; color:#fff; }
-    #add-to-calendar { min-height:92px; margin-top:16px; background:#fff; color:#111; border:2px solid #111; }
+    p { margin:0 0 18px; color:#666; }
+    textarea { width:100%; min-height:150px; resize:none; border:2px solid #111; border-radius:28px; padding:22px; background:#fff; color:#111; font:inherit; font-size:1.15rem; line-height:1.4; }
+    textarea:focus { outline:3px solid rgba(0,0,0,.12); outline-offset:3px; }
+    button { width:100%; min-height:100px; margin-top:16px; border:0; border-radius:28px; padding:22px; background:#111; color:#fff; font:inherit; font-size:clamp(1.35rem,6vw,2.2rem); font-weight:800; cursor:pointer; }
+    button:disabled { opacity:.35; cursor:default; }
+    .hint { margin:10px 0 0; font-size:.95rem; color:#777; }
     .event-details { margin-top:22px; padding:18px; border-radius:20px; background:#fff; text-align:left; line-height:1.5; }
     .event-title { font-size:1.2rem; font-weight:800; color:#111; }
     .muted { color:#777; }
@@ -22,53 +24,71 @@
 <body>
   <main>
     <h1>Add to Calendar</h1>
-    <p>Tap the microphone and say the event naturally.</p>
-    <button id="speak-event" type="button">🎙️ Speak event</button>
-    <div id="status" aria-live="polite"></div>
-    <div class="event-details" id="event-details"></div>
-    <button id="add-to-calendar" type="button">📅 Add to Calendar</button>
+    <p>Tap below, use the iPhone keyboard microphone, and say the event naturally.</p>
+    <textarea id="event-input" rows="3" autocapitalize="sentences" autocomplete="off" spellcheck="true" placeholder="Delilah's nursery Christmas play on 15 December at 2pm at Rocking Horse Nursery"></textarea>
+    <div class="hint">Your iPhone handles the dictation; this page just turns the words into a calendar event.</div>
+    <div id="status" aria-live="polite">Waiting for an event…</div>
+    <div class="event-details" id="event-details" hidden></div>
+    <button id="add-to-calendar" type="button" disabled>📅 Add to Calendar</button>
   </main>
 
   <script>
-    let eventConfig = {
-      title: "POC Calendar Event",
-      start: "20260907T180000",
-      end: "20260907T190000",
-      location: "",
-      description: "Created from the Add Event to Calendar POC."
-    };
+    let eventConfig = null;
 
     const months = {
       january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
       july: 6, august: 7, september: 8, october: 9, november: 10, december: 11
     };
 
+    const monthNames = Object.keys(months).join("|");
     const pad = (value) => String(value).padStart(2, "0");
     const toIcsDateTime = (date) => `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}T${pad(date.getHours())}${pad(date.getMinutes())}00`;
 
-    const parseSpokenEvent = (text) => {
-      const dateMatch = text.match(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s+(\d{4}))?/i);
-      const timeMatch = text.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
+    const parseEventText = (text) => {
+      const monthFirst = new RegExp(`\\b(${monthNames})\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:[ ,]+(\\d{4}))?`, "i");
+      const dayFirst = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?(${monthNames})(?:[ ,]+(\\d{4}))?`, "i");
+      const monthFirstMatch = text.match(monthFirst);
+      const dayFirstMatch = text.match(dayFirst);
 
-      if (!dateMatch || !timeMatch) return null;
+      let dateMatch;
+      let monthName;
+      let day;
+      let explicitYear;
+
+      if (monthFirstMatch && (!dayFirstMatch || monthFirstMatch.index <= dayFirstMatch.index)) {
+        dateMatch = monthFirstMatch;
+        monthName = monthFirstMatch[1];
+        day = Number(monthFirstMatch[2]);
+        explicitYear = monthFirstMatch[3] ? Number(monthFirstMatch[3]) : null;
+      } else if (dayFirstMatch) {
+        dateMatch = dayFirstMatch;
+        day = Number(dayFirstMatch[1]);
+        monthName = dayFirstMatch[2];
+        explicitYear = dayFirstMatch[3] ? Number(dayFirstMatch[3]) : null;
+      } else {
+        return null;
+      }
+
+      const timeMatch = text.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
+      if (!timeMatch) return null;
 
       const now = new Date();
-      const month = months[dateMatch[1].toLowerCase()];
-      const day = Number(dateMatch[2]);
-      let year = dateMatch[3] ? Number(dateMatch[3]) : now.getFullYear();
-
+      const month = months[monthName.toLowerCase()];
+      let year = explicitYear || now.getFullYear();
       let hour = Number(timeMatch[1]) % 12;
       if (timeMatch[3].toLowerCase() === "pm") hour += 12;
       const minute = Number(timeMatch[2] || 0);
 
       let start = new Date(year, month, day, hour, minute, 0, 0);
-      if (!dateMatch[3] && start < now) {
+      if (!explicitYear && start < now) {
         year += 1;
         start = new Date(year, month, day, hour, minute, 0, 0);
       }
 
+      if (start.getMonth() !== month || start.getDate() !== day) return null;
+
       const end = new Date(start.getTime() + 60 * 60 * 1000);
-      const title = text.slice(0, dateMatch.index).replace(/\s+on\s*$/i, "").trim();
+      const title = text.slice(0, dateMatch.index).replace(/\s+(?:on|for)\s*$/i, "").trim();
       const afterTime = text.slice((timeMatch.index || 0) + timeMatch[0].length).trim();
       const locationMatch = afterTime.match(/^(?:at|in)\s+(.+)$/i);
 
@@ -76,8 +96,8 @@
         title: title || "Calendar Event",
         start: toIcsDateTime(start),
         end: toIcsDateTime(end),
-        location: locationMatch ? locationMatch[1].trim() : "",
-        description: "Created by voice from Add Event to Calendar."
+        location: locationMatch ? locationMatch[1].trim().replace(/[.!?]+$/, "") : "",
+        description: "Created from Add Event to Calendar."
       };
     };
 
@@ -108,19 +128,65 @@
     ].join("\r\n");
 
     const renderEvent = () => {
-      const date = eventConfig.start.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})/);
-      const prettyDate = date
-        ? new Date(Number(date[1]), Number(date[2]) - 1, Number(date[3]), Number(date[4]), Number(date[5])).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })
-        : eventConfig.start;
+      const details = document.getElementById("event-details");
+      const addButton = document.getElementById("add-to-calendar");
 
-      document.getElementById("event-details").innerHTML = `
-        <div class="event-title">${eventConfig.title}</div>
-        <div>${prettyDate}</div>
-        ${eventConfig.location ? `<div class="muted">${eventConfig.location}</div>` : ""}
-      `;
+      if (!eventConfig) {
+        details.hidden = true;
+        addButton.disabled = true;
+        return;
+      }
+
+      const date = eventConfig.start.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})/);
+      const prettyDate = new Date(
+        Number(date[1]), Number(date[2]) - 1, Number(date[3]), Number(date[4]), Number(date[5])
+      ).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
+
+      details.replaceChildren();
+      const title = document.createElement("div");
+      title.className = "event-title";
+      title.textContent = eventConfig.title;
+      details.appendChild(title);
+
+      const dateLine = document.createElement("div");
+      dateLine.textContent = prettyDate;
+      details.appendChild(dateLine);
+
+      if (eventConfig.location) {
+        const location = document.createElement("div");
+        location.className = "muted";
+        location.textContent = eventConfig.location;
+        details.appendChild(location);
+      }
+
+      details.hidden = false;
+      addButton.disabled = false;
     };
 
+    const input = document.getElementById("event-input");
+    const status = document.getElementById("status");
+    let parseTimer;
+
+    input.addEventListener("input", () => {
+      clearTimeout(parseTimer);
+      parseTimer = setTimeout(() => {
+        const text = input.value.trim();
+        eventConfig = text ? parseEventText(text) : null;
+
+        if (!text) {
+          status.textContent = "Waiting for an event…";
+        } else if (eventConfig) {
+          status.textContent = "Event ready — check it below.";
+        } else {
+          status.textContent = "Include a date and time, for example: 15 December at 2pm.";
+        }
+
+        renderEvent();
+      }, 250);
+    });
+
     document.getElementById("add-to-calendar").addEventListener("click", () => {
+      if (!eventConfig) return;
       const blob = new Blob([makeIcs()], { type: "text/calendar;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -131,45 +197,6 @@
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     });
-
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const speakButton = document.getElementById("speak-event");
-    const status = document.getElementById("status");
-
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.lang = "en-GB";
-      recognition.interimResults = false;
-      recognition.maxAlternatives = 1;
-
-      speakButton.addEventListener("click", () => {
-        status.textContent = "Listening…";
-        recognition.start();
-      });
-
-      recognition.addEventListener("result", (event) => {
-        const transcript = event.results[0][0].transcript;
-        const parsed = parseSpokenEvent(transcript);
-
-        if (!parsed) {
-          status.textContent = `I heard: “${transcript}”. Try saying the month, date and time.`;
-          return;
-        }
-
-        eventConfig = parsed;
-        status.textContent = `I heard: “${transcript}”`;
-        renderEvent();
-      });
-
-      recognition.addEventListener("error", () => {
-        status.textContent = "Voice input didn't work. Tap the microphone and try again.";
-      });
-    } else {
-      speakButton.disabled = true;
-      status.textContent = "Voice input isn't available in this browser. The existing Add to Calendar button still works.";
-    }
-
-    renderEvent();
   </script>
 </body>
 </html>
