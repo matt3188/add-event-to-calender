@@ -13,6 +13,7 @@
     button { width:100%; border:0; border-radius:28px; padding:22px; font:inherit; font-size:clamp(1.35rem,6vw,2.2rem); font-weight:800; cursor:pointer; }
     #speak-event { min-height:120px; background:#111; color:#fff; }
     #add-to-calendar { min-height:92px; margin-top:16px; background:#fff; color:#111; border:2px solid #111; }
+    .hint { margin:12px 8px 0; font-size:.95rem; line-height:1.4; color:#777; }
     .event-details { margin-top:22px; padding:18px; border-radius:20px; background:#fff; text-align:left; line-height:1.5; }
     .event-title { font-size:1.2rem; font-weight:800; color:#111; }
     .muted { color:#777; }
@@ -24,6 +25,7 @@
     <h1>Add to Calendar</h1>
     <p>Tap the microphone and say the event naturally.</p>
     <button id="speak-event" type="button">🎙️ Speak event</button>
+    <p class="hint">Say: event name, date, time, then location.<br>Example: Delilah's nursery Christmas play December 15 at 2 pm at Rocking Horse Nursery.</p>
     <div id="status" aria-live="polite"></div>
     <div class="event-details" id="event-details"></div>
     <button id="add-to-calendar" type="button">📅 Add to Calendar</button>
@@ -37,6 +39,7 @@
       location: "",
       description: "Created from the Add Event to Calendar POC."
     };
+    let lastTranscript = "";
 
     const months = {
       january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
@@ -121,11 +124,26 @@
         ? new Date(Number(date[1]), Number(date[2]) - 1, Number(date[3]), Number(date[4]), Number(date[5])).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })
         : eventConfig.start;
 
-      document.getElementById("event-details").innerHTML = `
-        <div class="event-title">${eventConfig.title}</div>
-        <div>${prettyDate}</div>
-        ${eventConfig.location ? `<div class="muted">${eventConfig.location}</div>` : ""}
-      `;
+      const details = document.getElementById("event-details");
+      details.replaceChildren();
+
+      const spoken = document.createElement("div");
+      spoken.className = "event-title";
+      spoken.textContent = lastTranscript || "What you say will appear here";
+      details.appendChild(spoken);
+
+      if (lastTranscript) {
+        const dateLine = document.createElement("div");
+        dateLine.textContent = prettyDate;
+        details.appendChild(dateLine);
+
+        if (eventConfig.location) {
+          const locationLine = document.createElement("div");
+          locationLine.className = "muted";
+          locationLine.textContent = eventConfig.location;
+          details.appendChild(locationLine);
+        }
+      }
     };
 
     document.getElementById("add-to-calendar").addEventListener("click", () => {
@@ -157,15 +175,17 @@
 
       recognition.addEventListener("result", (event) => {
         const transcript = event.results[0][0].transcript;
+        lastTranscript = transcript;
         const parsed = parseSpokenEvent(transcript);
 
         if (!parsed) {
-          status.textContent = `I heard: “${transcript}”. Try saying the month, date and time.`;
+          status.textContent = "Try saying the event name, date, time, then location.";
+          renderEvent();
           return;
         }
 
         eventConfig = parsed;
-        status.textContent = `I heard: “${transcript}”`;
+        status.textContent = "Event understood.";
         renderEvent();
       });
 
