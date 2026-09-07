@@ -56,14 +56,22 @@
       const month = months[dateMatch[1].toLowerCase()];
       const day = Number(dateMatch[2]);
       let year = dateMatch[3] ? Number(dateMatch[3]) : now.getFullYear();
-
-      let hour = Number(timeMatch[1]) % 12;
-      if (timeMatch[3].toLowerCase() === "pm") hour += 12;
+      const hour12 = Number(timeMatch[1]);
       const minute = Number(timeMatch[2] || 0);
+
+      if (hour12 < 1 || hour12 > 12 || minute < 0 || minute > 59) return null;
+
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      if (day < 1 || day > daysInMonth) return null;
+
+      let hour = hour12 % 12;
+      if (timeMatch[3].toLowerCase() === "pm") hour += 12;
 
       let start = new Date(year, month, day, hour, minute, 0, 0);
       if (!dateMatch[3] && start < now) {
         year += 1;
+        const nextYearDaysInMonth = new Date(year, month + 1, 0).getDate();
+        if (day > nextYearDaysInMonth) return null;
         start = new Date(year, month, day, hour, minute, 0, 0);
       }
 
