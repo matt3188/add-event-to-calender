@@ -15,7 +15,10 @@
     #add-to-calendar { min-height:92px; margin-top:16px; background:#fff; color:#111; border:2px solid #111; }
     .hint { margin:12px 8px 0; font-size:.95rem; line-height:1.4; color:#777; }
     .event-details { margin-top:22px; padding:18px; border-radius:20px; background:#fff; text-align:left; line-height:1.5; }
-    .event-title { font-size:1.2rem; font-weight:800; color:#111; }
+    .spoken-text { margin-bottom:14px; font-weight:700; }
+    .field-grid { display:grid; gap:10px; }
+    .field-button { min-height:64px; border:1px solid #ddd; border-radius:16px; padding:12px 14px; background:#f7f7f8; color:#111; text-align:left; font-size:1rem; font-weight:600; }
+    .field-button span { display:block; font-size:.78rem; font-weight:600; color:#777; margin-bottom:2px; }
     .muted { color:#777; }
     #status { min-height:24px; margin-top:14px; color:#666; }
   </style>
@@ -40,6 +43,7 @@
       description: "Created from the Add Event to Calendar POC."
     };
     let lastTranscript = "";
+    let listeningFor = "event";
 
     const months = {
       january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
@@ -48,39 +52,54 @@
 
     const pad = (value) => String(value).padStart(2, "0");
     const toIcsDateTime = (date) => `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}T${pad(date.getHours())}${pad(date.getMinutes())}00`;
+    const fromIcsDateTime = (value) => {
+      const match = value.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})/);
+      return match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5])) : null;
+    };
 
-    const parseSpokenEvent = (text) => {
-      const dateMatch = text.match(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s+(\d{4}))?/i);
-      const timeMatch = text.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
+    const parseDateWords = (text, baseDate = new Date()) => {
+      const match = text.match(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s+(\d{4}))?/i);
+      if (!match) return null;
 
-      if (!dateMatch || !timeMatch) return null;
-
-      const now = new Date();
-      const month = months[dateMatch[1].toLowerCase()];
-      const day = Number(dateMatch[2]);
-      let year = dateMatch[3] ? Number(dateMatch[3]) : now.getFullYear();
-      const hour12 = Number(timeMatch[1]);
-      const minute = Number(timeMatch[2] || 0);
-
-      if (hour12 < 1 || hour12 > 12 || minute < 0 || minute > 59) return null;
-
-      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const month = months[match[1].toLowerCase()];
+      const day = Number(match[2]);
+      let year = match[3] ? Number(match[3]) : baseDate.getFullYear();
+      let daysInMonth = new Date(year, month + 1, 0).getDate();
       if (day < 1 || day > daysInMonth) return null;
 
-      let hour = hour12 % 12;
-      if (timeMatch[3].toLowerCase() === "pm") hour += 12;
-
-      let start = new Date(year, month, day, hour, minute, 0, 0);
-      if (!dateMatch[3] && start < now) {
+      let result = new Date(year, month, day, baseDate.getHours(), baseDate.getMinutes(), 0, 0);
+      if (!match[3] && result < new Date()) {
         year += 1;
-        const nextYearDaysInMonth = new Date(year, month + 1, 0).getDate();
-        if (day > nextYearDaysInMonth) return null;
-        start = new Date(year, month, day, hour, minute, 0, 0);
+        daysInMonth = new Date(year, month + 1, 0).getDate();
+        if (day > daysInMonth) return null;
+        result = new Date(year, month, day, baseDate.getHours(), baseDate.getMinutes(), 0, 0);
       }
+      return { date: result, match };
+    };
 
+    const parseTimeWords = (text) => {
+      const match = text.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
+      if (!match) return null;
+
+      const hour12 = Number(match[1]);
+      const minute = Number(match[2] || 0);
+      if (hour12 < 1 || hour12 > 12 || minute < 0 || minute > 59) return null;
+
+      let hour = hour12 % 12;
+      if (match[3].toLowerCase() === "pm") hour += 12;
+      return { hour, minute, match };
+    };
+
+    const parseSpokenEvent = (text) => {
+      const datePart = parseDateWords(text);
+      const timePart = parseTimeWords(text);
+      if (!datePart || !timePart) return null;
+
+      const start = datePart.date;
+      start.setHours(timePart.hour, timePart.minute, 0, 0);
       const end = new Date(start.getTime() + 60 * 60 * 1000);
-      const title = text.slice(0, dateMatch.index).replace(/\s+on\s*$/i, "").trim();
-      const afterTime = text.slice((timeMatch.index || 0) + timeMatch[0].length).trim();
+      const title = text.slice(0, datePart.match.index).replace(/\s+on\s*$/i, "").trim();
+      const afterTime = text.slice((timePart.match.index || 0) + timePart.match[0].length).trim();
       const locationMatch = afterTime.match(/^(?:at|in)\s+(.+)$/i);
 
       return {
@@ -100,7 +119,7 @@
 
     const makeUtcTimestamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
 
-    const makeIcs = () => [
+    const makeIcs = (config) => [
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
       "PRODID:-//Add Event to Calendar//POC//EN",
@@ -109,49 +128,58 @@
       "BEGIN:VEVENT",
       `UID:${Date.now()}@add-event-to-calender`,
       `DTSTAMP:${makeUtcTimestamp()}`,
-      `DTSTART;TZID=Europe/London:${eventConfig.start}`,
-      `DTEND;TZID=Europe/London:${eventConfig.end}`,
-      `SUMMARY:${escapeIcsText(eventConfig.title)}`,
-      `LOCATION:${escapeIcsText(eventConfig.location)}`,
-      `DESCRIPTION:${escapeIcsText(eventConfig.description)}`,
+      `DTSTART;TZID=Europe/London:${config.start}`,
+      `DTEND;TZID=Europe/London:${config.end}`,
+      `SUMMARY:${escapeIcsText(config.title)}`,
+      `LOCATION:${escapeIcsText(config.location)}`,
+      `DESCRIPTION:${escapeIcsText(config.description)}`,
       "END:VEVENT",
       "END:VCALENDAR"
     ].join("\r\n");
 
-    const renderEvent = () => {
-      const date = eventConfig.start.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})/);
-      const prettyDate = date
-        ? new Date(Number(date[1]), Number(date[2]) - 1, Number(date[3]), Number(date[4]), Number(date[5])).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })
-        : eventConfig.start;
+    const addFieldButton = (container, label, value, field) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "field-button";
+      button.dataset.field = field;
+      const labelNode = document.createElement("span");
+      labelNode.textContent = `${label} — tap to re-speak`;
+      const valueNode = document.createTextNode(value || "Not set");
+      button.append(labelNode, valueNode);
+      container.appendChild(button);
+    };
 
+    const renderEvent = () => {
+      const start = fromIcsDateTime(eventConfig.start);
+      const prettyDate = start ? start.toLocaleDateString("en-GB", { dateStyle: "medium" }) : eventConfig.start;
+      const prettyTime = start ? start.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "";
       const details = document.getElementById("event-details");
       details.replaceChildren();
 
       const spoken = document.createElement("div");
-      spoken.className = "event-title";
-      spoken.textContent = lastTranscript || "What you say will appear here";
+      spoken.className = "spoken-text";
+      spoken.textContent = lastTranscript ? `You said: “${lastTranscript}”` : "What you say will appear here";
       details.appendChild(spoken);
 
       if (lastTranscript) {
-        const dateLine = document.createElement("div");
-        dateLine.textContent = prettyDate;
-        details.appendChild(dateLine);
-
-        if (eventConfig.location) {
-          const locationLine = document.createElement("div");
-          locationLine.className = "muted";
-          locationLine.textContent = eventConfig.location;
-          details.appendChild(locationLine);
-        }
+        const fields = document.createElement("div");
+        fields.className = "field-grid";
+        addFieldButton(fields, "Event", eventConfig.title, "title");
+        addFieldButton(fields, "Date", prettyDate, "date");
+        addFieldButton(fields, "Time", prettyTime, "time");
+        addFieldButton(fields, "Location", eventConfig.location, "location");
+        details.appendChild(fields);
       }
     };
 
     document.getElementById("add-to-calendar").addEventListener("click", () => {
-      const blob = new Blob([makeIcs()], { type: "text/calendar;charset=utf-8" });
+      const currentEvent = { ...eventConfig };
+      const blob = new Blob([makeIcs(currentEvent)], { type: "text/calendar;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
+      const safeTitle = currentEvent.title.trim().replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "event";
       link.href = url;
-      link.download = "event.ics";
+      link.download = `${safeTitle}.ics`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -168,29 +196,70 @@
       recognition.interimResults = false;
       recognition.maxAlternatives = 1;
 
-      speakButton.addEventListener("click", () => {
-        status.textContent = "Listening…";
+      const startListening = (field = "event") => {
+        listeningFor = field;
+        status.textContent = field === "event" ? "Listening…" : `Listening for ${field}…`;
         recognition.start();
+      };
+
+      speakButton.addEventListener("click", () => startListening());
+
+      document.getElementById("event-details").addEventListener("click", (event) => {
+        const button = event.target.closest(".field-button");
+        if (button) startListening(button.dataset.field);
       });
 
       recognition.addEventListener("result", (event) => {
-        const transcript = event.results[0][0].transcript;
-        lastTranscript = transcript;
-        const parsed = parseSpokenEvent(transcript);
+        const transcript = event.results[0][0].transcript.trim();
 
-        if (!parsed) {
-          status.textContent = "Try saying the event name, date, time, then location.";
+        if (listeningFor === "event") {
+          lastTranscript = transcript;
+          const parsed = parseSpokenEvent(transcript);
+          if (!parsed) {
+            status.textContent = "Try saying the event name, date, time, then location.";
+            renderEvent();
+            return;
+          }
+          eventConfig = parsed;
+          status.textContent = "Event understood. Tap any field to re-speak it.";
           renderEvent();
           return;
         }
 
-        eventConfig = parsed;
-        status.textContent = "Event understood.";
+        const start = fromIcsDateTime(eventConfig.start);
+        if (!start) return;
+
+        if (listeningFor === "title") {
+          eventConfig.title = transcript;
+        } else if (listeningFor === "location") {
+          eventConfig.location = transcript.replace(/^(?:at|in)\s+/i, "");
+        } else if (listeningFor === "date") {
+          const parsedDate = parseDateWords(transcript, start);
+          if (!parsedDate) {
+            status.textContent = "I couldn't understand that date. Try again.";
+            return;
+          }
+          start.setFullYear(parsedDate.date.getFullYear(), parsedDate.date.getMonth(), parsedDate.date.getDate());
+        } else if (listeningFor === "time") {
+          const parsedTime = parseTimeWords(transcript);
+          if (!parsedTime) {
+            status.textContent = "I couldn't understand that time. Try again.";
+            return;
+          }
+          start.setHours(parsedTime.hour, parsedTime.minute, 0, 0);
+        }
+
+        if (listeningFor === "date" || listeningFor === "time") {
+          eventConfig.start = toIcsDateTime(start);
+          eventConfig.end = toIcsDateTime(new Date(start.getTime() + 60 * 60 * 1000));
+        }
+
+        status.textContent = `${listeningFor[0].toUpperCase()}${listeningFor.slice(1)} updated.`;
         renderEvent();
       });
 
       recognition.addEventListener("error", () => {
-        status.textContent = "Voice input didn't work. Tap the microphone and try again.";
+        status.textContent = "Voice input didn't work. Tap again and try once more.";
       });
     } else {
       speakButton.disabled = true;
